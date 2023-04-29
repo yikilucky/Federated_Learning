@@ -13,6 +13,7 @@ from collections import OrderedDict
 
 from .models import *
 from .utils import *
+from .clusters import *
 from .client import Client
 
 logger = logging.getLogger(__name__)
@@ -65,8 +66,8 @@ class Server(object):
 
         self.init_config = init_config
 
-        self.fraction = fed_config["C"]
-        self.num_clients = fed_config["K"]
+        # self.fraction = fed_config["C"]
+        # self.num_clients = fed_config["K"]
         self.num_rounds = fed_config["R"]
         self.local_epochs = fed_config["E"]
         self.batch_size = fed_config["B"]
@@ -88,6 +89,14 @@ class Server(object):
         print(message); logging.info(message)
         del message; gc.collect()
 
+        # initialize clusters
+        self.create_servers_and_devices()
+
+        message = f"[Round: {str(self._round).zfill(4)}] ...successfully created {str(self.clusters_servers)} clusters!"
+        print(message); logging.info(message)
+        del message; gc.collect()
+
+
         # split local dataset for each client
         local_datasets, test_dataset = create_datasets(self.data_path, self.dataset_name, self.num_clients, self.num_shards, self.iid)
         
@@ -107,6 +116,18 @@ class Server(object):
         
         # send the model skeleton to all clients
         self.transmit_model()
+
+    def create_servers_and_devices(self):
+        num_parent_points, xx_parent, yy_parent, devices_x, devices_y = create_clusters()
+        self.num_clients = len(devices_x[num_parent_points-1])  # the number of clients in the main cluster
+        self.clusters_servers = num_parent_points  # the number of servers
+        self.servers_xx = xx_parent  # the x-coordinate of servers
+        self.servers_yy = yy_parent  # the y-coordinate of servers
+        self.devices_xx = devices_x  # the x-coordinate of devices in all clusters
+        self.devices_yy = devices_y  # the y-coordinate of devices in all clusters
+        self.clients_xx = devices_x[num_parent_points - 1]  # the x-coordinate of clients in the main cluster
+        self.clients_yy = devices_y[num_parent_points - 1]  # the y-coordinate of clients in the main cluster
+
         
     def create_clients(self, local_datasets):
         """Initialize each Client instance."""
@@ -159,7 +180,7 @@ class Server(object):
         print(message); logging.info(message)
         del message; gc.collect()
 
-        num_sampled_clients = max(int(self.fraction * self.num_clients), 1)
+        num_sampled_clients = 10
         sampled_client_indices = sorted(np.random.choice(a=[i for i in range(self.num_clients)], size=num_sampled_clients, replace=False).tolist())
 
         return sampled_client_indices
@@ -196,9 +217,9 @@ class Server(object):
         print(message, flush=True); logging.info(message)
         del message; gc.collect()
 
-        return client_size
+        # return client_size
 
-    def average_model(self, sampled_client_indices, coefficients):
+    def average_model(self, sampled_client_indices):
         """Average the updated and transmitted parameters from each selected client."""
         message = f"[Round: {str(self._round).zfill(4)}] Aggregate updated weights of {len(sampled_client_indices)} clients...!"
         print(message); logging.info(message)
@@ -209,9 +230,9 @@ class Server(object):
             local_weights = self.clients[idx].model.state_dict()
             for key in self.model.state_dict().keys():
                 if it == 0:
-                    averaged_weights[key] = coefficients[it] * local_weights[key]
+                    averaged_weights[key] = 0.1 * local_weights[key]
                 else:
-                    averaged_weights[key] += coefficients[it] * local_weights[key]
+                    averaged_weights[key] += 0.1 * local_weights[key]
         self.model.load_state_dict(averaged_weights)
 
         message = f"[Round: {str(self._round).zfill(4)}] ...updated weights of {len(sampled_client_indices)} clients are successfully averaged!"
@@ -247,10 +268,10 @@ class Server(object):
         # updated selected clients with local dataset
         if self.mp_flag:
             with pool.ThreadPool(processes=cpu_count() - 1) as workhorse:
-                selected_total_size = workhorse.map(self.mp_update_selected_clients, sampled_client_indices)
-            selected_total_size = sum(selected_total_size)
+                workhorse.map(self.mp_update_selected_clients, sampled_client_indices)
+            # selected_total_size = sum(selected_total_size)
         else:
-            selected_total_size = self.update_selected_clients(sampled_client_indices)
+            self.update_selected_clients(sampled_client_indices)
 
         # evaluate selected clients with local dataset (same as the one used for local update)
         if self.mp_flag:
@@ -264,10 +285,10 @@ class Server(object):
             self.evaluate_selected_models(sampled_client_indices)
 
         # calculate averaging coefficient of weights
-        mixing_coefficients = [len(self.clients[idx]) / selected_total_size for idx in sampled_client_indices]
+        # mixing_coefficients = [len(self.clients[idx]) / selected_total_size for idx in sampled_client_indices]
 
         # average each updated model parameters of the selected clients and update the global model
-        self.average_model(sampled_client_indices, mixing_coefficients)
+        self.average_model(sampled_client_indices)
         
     def evaluate_global_model(self):
         """Evaluate the global model using the global holdout dataset (self.data)."""
@@ -305,12 +326,12 @@ class Server(object):
 
             self.writer.add_scalars(
                 'Loss',
-                {f"[{self.dataset_name}]_{self.model.name} C_{self.fraction}, E_{self.local_epochs}, B_{self.batch_size}, IID_{self.iid}": test_loss},
+                {f"[{self.dataset_name}]_{self.model.name} E_{self.local_epochs}, B_{self.batch_size}, IID_{self.iid}": test_loss},
                 self._round
                 )
             self.writer.add_scalars(
                 'Accuracy', 
-                {f"[{self.dataset_name}]_{self.model.name} C_{self.fraction}, E_{self.local_epochs}, B_{self.batch_size}, IID_{self.iid}": test_accuracy},
+                {f"[{self.dataset_name}]_{self.model.name} E_{self.local_epochs}, B_{self.batch_size}, IID_{self.iid}": test_accuracy},
                 self._round
                 )
 
