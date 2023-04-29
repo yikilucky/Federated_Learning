@@ -226,16 +226,39 @@ class Server(object):
         del message; gc.collect()
 
         averaged_weights = OrderedDict()
-        for it, idx in tqdm(enumerate(sampled_client_indices), leave=False):
-            local_weights = self.clients[idx].model.state_dict()
-            for key in self.model.state_dict().keys():
-                if it == 0:
-                    averaged_weights[key] = 0.1 * local_weights[key]
-                else:
-                    averaged_weights[key] += 0.1 * local_weights[key]
-        self.model.load_state_dict(averaged_weights)
+        # for it, idx in tqdm(enumerate(sampled_client_indices), leave=False):
+        #     local_weights = self.clients[idx].model.state_dict()
+        #     for key in self.model.state_dict().keys():
+        #         if it == 0:
+        #             averaged_weights[key] = 0.1 * local_weights[key]
+        #         else:
+        #             averaged_weights[key] += 0.1 * local_weights[key]
 
-        message = f"[Round: {str(self._round).zfill(4)}] ...updated weights of {len(sampled_client_indices)} clients are successfully averaged!"
+        k = 0
+        for idx in tqdm(sampled_client_indices, leave=False):
+            local_weights = self.clients[idx].model.state_dict()
+            h = np.random.exponential(1, 1)[0] ** 2
+            if h < 0.2:
+                continue
+            k += 1
+            # print(local_weights)
+            for key in self.model.state_dict().keys():
+                if key not in averaged_weights.keys():
+                    averaged_weights[key] = local_weights[key]
+                else:
+                    averaged_weights[key] += local_weights[key]
+        # print(k)
+        for key in averaged_weights.keys():
+            averaged_weights[key] *= 1 / k
+            noise = torch.tensor(np.random.normal(0, 0.0001, tuple(averaged_weights[key].shape)), dtype=torch.float32)
+            # print(noise)
+            averaged_weights[key] += noise
+
+        self.model.load_state_dict(averaged_weights)
+        # print('averaged_weights')
+        # print(averaged_weights)
+
+        message = f"[Round: {str(self._round).zfill(4)}] ...updated weights of {int(k)} clients are successfully averaged!"
         print(message); logging.info(message)
         del message; gc.collect()
     
