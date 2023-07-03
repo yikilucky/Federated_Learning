@@ -14,6 +14,7 @@ from collections import OrderedDict
 from .models import *
 from .utils import *
 from .clusters import *
+from .interference import *
 from .client import Client
 
 logger = logging.getLogger(__name__)
@@ -225,6 +226,10 @@ class Server(object):
         print(message); logging.info(message)
         del message; gc.collect()
 
+        interference_other_clusters, rho = generate_interference(self.model.state_dict(), self.clusters_servers,
+                                                            self.servers_xx, self.servers_yy, self.devices_xx,
+                                                            self.devices_yy)
+
         averaged_weights = OrderedDict()
         # for it, idx in tqdm(enumerate(sampled_client_indices), leave=False):
         #     local_weights = self.clients[idx].model.state_dict()
@@ -237,7 +242,7 @@ class Server(object):
         k = 0
         for idx in tqdm(sampled_client_indices, leave=False):
             local_weights = self.clients[idx].model.state_dict()
-            h = np.random.exponential(1, 1)[0] ** 2
+            h = np.random.exponential(1, 1)[0]
             if h < 0.2:
                 continue
             k += 1
@@ -252,7 +257,7 @@ class Server(object):
             averaged_weights[key] *= 1 / k
             noise = torch.tensor(np.random.normal(0, 0.0001, tuple(averaged_weights[key].shape)), dtype=torch.float32)
             # print(noise)
-            averaged_weights[key] += noise
+            averaged_weights[key] += (noise + interference_other_clusters[key]) / (np.sqrt(rho) * k)
 
         self.model.load_state_dict(averaged_weights)
         # print('averaged_weights')

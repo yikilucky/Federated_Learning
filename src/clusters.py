@@ -9,7 +9,7 @@ def create_clusters():
     y_max = 5
 
     # Parameters for the parent and daughter point processes
-    lambda_parent = 0.2  # density of parent Poisson point process
+    # lambda_parent = 0.3  # density of parent Poisson point process
     lambda_daughter = 100  # mean number of points in each cluster
     radius_cluster = 0.5  # radius of cluster disk (for daughter points)
 
@@ -19,7 +19,8 @@ def create_clusters():
     area_total = x_delta * y_delta  # area of  rectangle
 
     # Simulate Poisson point process for the parents
-    num_parent_points = np.random.poisson(area_total * lambda_parent)  # Poisson number of points
+    # num_parent_points = np.random.poisson(area_total * lambda_parent)  # Poisson number of points
+    num_parent_points = 18
     # x and y coordinates of Poisson points for the parent
     xx_parent = x_min + x_delta * np.random.uniform(0, 1, num_parent_points)
     yy_parent = y_min + y_delta * np.random.uniform(0, 1, num_parent_points)
